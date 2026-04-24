@@ -13,7 +13,7 @@ type Order = Database["public"]["Tables"]["orders"]["Row"];
 type OrderItem = Database["public"]["Tables"]["order_items"]["Row"];
 
 export const Route = createFileRoute("/merchant/orders")({
-  component: MerchantOrders;
+  component: MerchantOrders,
 });
 
 const STATUS_FLOW: Record<string, { next: Order["status"]; label: string }> = {
