@@ -10,17 +10,26 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as OrdersRouteImport } from './routes/orders'
+import { Route as MerchantRouteImport } from './routes/merchant'
 import { Route as MenuRouteImport } from './routes/menu'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as BecomeMerchantRouteImport } from './routes/become-merchant'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MerchantIndexRouteImport } from './routes/merchant.index'
 import { Route as PayTxnRouteImport } from './routes/pay.$txn'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
+import { Route as MerchantOrdersRouteImport } from './routes/merchant.orders'
+import { Route as MerchantMenuRouteImport } from './routes/merchant.menu'
 
 const OrdersRoute = OrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MerchantRoute = MerchantRouteImport.update({
+  id: '/merchant',
+  path: '/merchant',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MenuRoute = MenuRouteImport.update({
@@ -48,6 +57,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MerchantIndexRoute = MerchantIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => MerchantRoute,
+} as any)
 const PayTxnRoute = PayTxnRouteImport.update({
   id: '/pay/$txn',
   path: '/pay/$txn',
@@ -58,6 +72,16 @@ const OrderIdRoute = OrderIdRouteImport.update({
   path: '/order/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MerchantOrdersRoute = MerchantOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => MerchantRoute,
+} as any)
+const MerchantMenuRoute = MerchantMenuRouteImport.update({
+  id: '/menu',
+  path: '/menu',
+  getParentRoute: () => MerchantRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -65,9 +89,13 @@ export interface FileRoutesByFullPath {
   '/become-merchant': typeof BecomeMerchantRoute
   '/checkout': typeof CheckoutRoute
   '/menu': typeof MenuRoute
+  '/merchant': typeof MerchantRouteWithChildren
   '/orders': typeof OrdersRoute
+  '/merchant/menu': typeof MerchantMenuRoute
+  '/merchant/orders': typeof MerchantOrdersRoute
   '/order/$id': typeof OrderIdRoute
   '/pay/$txn': typeof PayTxnRoute
+  '/merchant/': typeof MerchantIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -76,8 +104,11 @@ export interface FileRoutesByTo {
   '/checkout': typeof CheckoutRoute
   '/menu': typeof MenuRoute
   '/orders': typeof OrdersRoute
+  '/merchant/menu': typeof MerchantMenuRoute
+  '/merchant/orders': typeof MerchantOrdersRoute
   '/order/$id': typeof OrderIdRoute
   '/pay/$txn': typeof PayTxnRoute
+  '/merchant': typeof MerchantIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -86,9 +117,13 @@ export interface FileRoutesById {
   '/become-merchant': typeof BecomeMerchantRoute
   '/checkout': typeof CheckoutRoute
   '/menu': typeof MenuRoute
+  '/merchant': typeof MerchantRouteWithChildren
   '/orders': typeof OrdersRoute
+  '/merchant/menu': typeof MerchantMenuRoute
+  '/merchant/orders': typeof MerchantOrdersRoute
   '/order/$id': typeof OrderIdRoute
   '/pay/$txn': typeof PayTxnRoute
+  '/merchant/': typeof MerchantIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -98,9 +133,13 @@ export interface FileRouteTypes {
     | '/become-merchant'
     | '/checkout'
     | '/menu'
+    | '/merchant'
     | '/orders'
+    | '/merchant/menu'
+    | '/merchant/orders'
     | '/order/$id'
     | '/pay/$txn'
+    | '/merchant/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -109,8 +148,11 @@ export interface FileRouteTypes {
     | '/checkout'
     | '/menu'
     | '/orders'
+    | '/merchant/menu'
+    | '/merchant/orders'
     | '/order/$id'
     | '/pay/$txn'
+    | '/merchant'
   id:
     | '__root__'
     | '/'
@@ -118,9 +160,13 @@ export interface FileRouteTypes {
     | '/become-merchant'
     | '/checkout'
     | '/menu'
+    | '/merchant'
     | '/orders'
+    | '/merchant/menu'
+    | '/merchant/orders'
     | '/order/$id'
     | '/pay/$txn'
+    | '/merchant/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -129,6 +175,7 @@ export interface RootRouteChildren {
   BecomeMerchantRoute: typeof BecomeMerchantRoute
   CheckoutRoute: typeof CheckoutRoute
   MenuRoute: typeof MenuRoute
+  MerchantRoute: typeof MerchantRouteWithChildren
   OrdersRoute: typeof OrdersRoute
   OrderIdRoute: typeof OrderIdRoute
   PayTxnRoute: typeof PayTxnRoute
@@ -141,6 +188,13 @@ declare module '@tanstack/react-router' {
       path: '/orders'
       fullPath: '/orders'
       preLoaderRoute: typeof OrdersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/merchant': {
+      id: '/merchant'
+      path: '/merchant'
+      fullPath: '/merchant'
+      preLoaderRoute: typeof MerchantRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/menu': {
@@ -178,6 +232,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/merchant/': {
+      id: '/merchant/'
+      path: '/'
+      fullPath: '/merchant/'
+      preLoaderRoute: typeof MerchantIndexRouteImport
+      parentRoute: typeof MerchantRoute
+    }
     '/pay/$txn': {
       id: '/pay/$txn'
       path: '/pay/$txn'
@@ -192,8 +253,38 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrderIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/merchant/orders': {
+      id: '/merchant/orders'
+      path: '/orders'
+      fullPath: '/merchant/orders'
+      preLoaderRoute: typeof MerchantOrdersRouteImport
+      parentRoute: typeof MerchantRoute
+    }
+    '/merchant/menu': {
+      id: '/merchant/menu'
+      path: '/menu'
+      fullPath: '/merchant/menu'
+      preLoaderRoute: typeof MerchantMenuRouteImport
+      parentRoute: typeof MerchantRoute
+    }
   }
 }
+
+interface MerchantRouteChildren {
+  MerchantMenuRoute: typeof MerchantMenuRoute
+  MerchantOrdersRoute: typeof MerchantOrdersRoute
+  MerchantIndexRoute: typeof MerchantIndexRoute
+}
+
+const MerchantRouteChildren: MerchantRouteChildren = {
+  MerchantMenuRoute: MerchantMenuRoute,
+  MerchantOrdersRoute: MerchantOrdersRoute,
+  MerchantIndexRoute: MerchantIndexRoute,
+}
+
+const MerchantRouteWithChildren = MerchantRoute._addFileChildren(
+  MerchantRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -201,6 +292,7 @@ const rootRouteChildren: RootRouteChildren = {
   BecomeMerchantRoute: BecomeMerchantRoute,
   CheckoutRoute: CheckoutRoute,
   MenuRoute: MenuRoute,
+  MerchantRoute: MerchantRouteWithChildren,
   OrdersRoute: OrdersRoute,
   OrderIdRoute: OrderIdRoute,
   PayTxnRoute: PayTxnRoute,
