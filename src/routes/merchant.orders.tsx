@@ -11,12 +11,13 @@ import type { Database } from "@/integrations/supabase/types";
 
 type Order = Database["public"]["Tables"]["orders"]["Row"];
 type OrderItem = Database["public"]["Tables"]["order_items"]["Row"];
+type OrderStatus = Database["public"]["Enums"]["order_status"];
 
 export const Route = createFileRoute("/merchant/orders")({
   component: MerchantOrders,
 });
 
-const STATUS_FLOW: Record<string, { next: Order["status"]; label: string }> = {
+const STATUS_FLOW: Record<string, { next: OrderStatus; label: string }> = {
   received: { next: "preparing", label: "Start preparing" },
   preparing: { next: "ready", label: "Mark ready" },
 };
@@ -201,7 +202,7 @@ function MerchantOrders() {
   );
 }
 
-function StatusPill({ status }: { status: Order["status"] }) {
+function StatusPill({ status }: { status: OrderStatus }) {
   const styles: Record<string, string> = {
     received: "bg-blue-100 text-blue-700",
     preparing: "bg-amber-100 text-amber-700",
