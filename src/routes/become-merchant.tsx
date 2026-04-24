@@ -59,11 +59,9 @@ function BecomeMerchantPage() {
     }
     setBusy(true);
 
-    // 1) Grant merchant role
-    const { error: roleErr } = await supabase
-      .from("user_roles")
-      .insert({ user_id: user.id, role: "merchant" });
-    if (roleErr && !roleErr.message.includes("duplicate")) {
+    // 1) Grant merchant role via secure RPC (users can't insert into user_roles directly).
+    const { error: roleErr } = await supabase.rpc("claim_merchant_role");
+    if (roleErr) {
       toast.error(roleErr.message);
       setBusy(false);
       return;
