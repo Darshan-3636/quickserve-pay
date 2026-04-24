@@ -12,11 +12,11 @@ export const Route = createFileRoute("/merchant")({
   component: MerchantLayout,
 });
 
-const NAV = [
+const NAV: ReadonlyArray<{ to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean }> = [
   { to: "/merchant", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/merchant/menu", label: "Menu", icon: UtensilsCrossed },
   { to: "/merchant/orders", label: "Orders", icon: Receipt },
-] as const;
+];
 
 function MerchantLayout() {
   const { user, isMerchant, loading, signOut } = useAuth();
