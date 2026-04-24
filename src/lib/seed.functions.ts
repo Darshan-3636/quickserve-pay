@@ -50,7 +50,7 @@ export const seedDemoRestaurant = createServerFn({ method: "POST" })
         tagline: "Royal Indian flavours, ready in minutes",
         description:
           "From slow-cooked Hyderabadi biryani to crispy South Indian dosas — pre-paid, packed, and waiting for you.",
-        cover_image_url: "/src/assets/hero-thali.jpg",
+        cover_image_url: "hero-thali.jpg",
         address: "MG Road, Bengaluru",
         city: "Bengaluru",
         gst_percentage: 5.0,
