@@ -171,6 +171,7 @@ export type Database = {
           customer_phone: string
           estimated_wait_minutes: number | null
           id: string
+          manual_verified_by: string | null
           paid_at: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
           phonepe_merchant_transaction_id: string | null
@@ -183,6 +184,7 @@ export type Database = {
           subtotal: number
           total: number
           updated_at: string
+          upi_reference_id: string | null
         }
         Insert: {
           cgst?: number
@@ -194,6 +196,7 @@ export type Database = {
           customer_phone: string
           estimated_wait_minutes?: number | null
           id?: string
+          manual_verified_by?: string | null
           paid_at?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           phonepe_merchant_transaction_id?: string | null
@@ -206,6 +209,7 @@ export type Database = {
           subtotal: number
           total: number
           updated_at?: string
+          upi_reference_id?: string | null
         }
         Update: {
           cgst?: number
@@ -217,6 +221,7 @@ export type Database = {
           customer_phone?: string
           estimated_wait_minutes?: number | null
           id?: string
+          manual_verified_by?: string | null
           paid_at?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           phonepe_merchant_transaction_id?: string | null
@@ -229,6 +234,7 @@ export type Database = {
           subtotal?: number
           total?: number
           updated_at?: string
+          upi_reference_id?: string | null
         }
         Relationships: [
           {
@@ -274,6 +280,7 @@ export type Database = {
           container_charge: number
           cover_image_url: string | null
           created_at: string
+          cuisine: string | null
           description: string | null
           gst_percentage: number
           id: string
@@ -281,10 +288,13 @@ export type Database = {
           logo_url: string | null
           name: string
           owner_id: string
+          payee_name: string | null
+          payment_mode: string
           phonepe_merchant_id: string | null
           slug: string
           tagline: string | null
           updated_at: string
+          upi_vpa: string | null
         }
         Insert: {
           address?: string | null
@@ -292,6 +302,7 @@ export type Database = {
           container_charge?: number
           cover_image_url?: string | null
           created_at?: string
+          cuisine?: string | null
           description?: string | null
           gst_percentage?: number
           id?: string
@@ -299,10 +310,13 @@ export type Database = {
           logo_url?: string | null
           name: string
           owner_id: string
+          payee_name?: string | null
+          payment_mode?: string
           phonepe_merchant_id?: string | null
           slug: string
           tagline?: string | null
           updated_at?: string
+          upi_vpa?: string | null
         }
         Update: {
           address?: string | null
@@ -310,6 +324,7 @@ export type Database = {
           container_charge?: number
           cover_image_url?: string | null
           created_at?: string
+          cuisine?: string | null
           description?: string | null
           gst_percentage?: number
           id?: string
@@ -317,10 +332,13 @@ export type Database = {
           logo_url?: string | null
           name?: string
           owner_id?: string
+          payee_name?: string | null
+          payment_mode?: string
           phonepe_merchant_id?: string | null
           slug?: string
           tagline?: string | null
           updated_at?: string
+          upi_vpa?: string | null
         }
         Relationships: []
       }
@@ -364,6 +382,7 @@ export type Database = {
       diet_type: "veg" | "non_veg" | "egg"
       order_status:
         | "pending_payment"
+        | "awaiting_verification"
         | "received"
         | "preparing"
         | "ready"
@@ -501,6 +520,7 @@ export const Constants = {
       diet_type: ["veg", "non_veg", "egg"],
       order_status: [
         "pending_payment",
+        "awaiting_verification",
         "received",
         "preparing",
         "ready",
