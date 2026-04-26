@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, UtensilsCrossed, Receipt, ChefHat, LogOut } from "lucide-react";
+import { LayoutDashboard, UtensilsCrossed, Receipt, ChefHat, LogOut, Smartphone } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -16,6 +16,7 @@ const NAV: ReadonlyArray<{ to: string; label: string; icon: typeof LayoutDashboa
   { to: "/merchant", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/merchant/menu", label: "Menu", icon: UtensilsCrossed },
   { to: "/merchant/orders", label: "Orders", icon: Receipt },
+  { to: "/merchant/payments", label: "Payments", icon: Smartphone },
 ];
 
 function MerchantLayout() {
