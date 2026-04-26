@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { generatePickupCode } from "@/lib/format";
+import { buildUpiUri, VPA_REGEX } from "@/lib/upi";
 
 const CartLineSchema = z.object({
   menu_item_id: z.string().uuid(),
@@ -174,3 +175,99 @@ export const confirmSimulatedPayment = createServerFn({ method: "POST" })
 
     return { ok: true as const };
   });
+
+// ---------------------------------------------------------------------------
+// UPI Intent flow (no payment gateway needed)
+// ---------------------------------------------------------------------------
+
+const GetUpiLinkSchema = z.object({
+  merchantTransactionId: z.string().min(1).max(100),
+});
+
+/**
+ * Returns a `upi://pay?...` deep link for an order based on the restaurant's
+ * stored UPI VPA + payee name. The customer's phone opens the UPI app picker;
+ * money is transferred directly to the restaurant.
+ */
+export const getOrderUpiLink = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => GetUpiLinkSchema.parse(input))
+  .handler(async ({ data }) => {
+    const { data: order, error } = await supabaseAdmin
+      .from("orders")
+      .select("id, total, restaurant_id, phonepe_merchant_transaction_id, payment_status")
+      .eq("phonepe_merchant_transaction_id", data.merchantTransactionId)
+      .maybeSingle();
+    if (error || !order) return { ok: false as const, error: "Order not found." };
+
+    const { data: restaurant } = await supabaseAdmin
+      .from("restaurants")
+      .select("upi_vpa, payee_name, name, payment_mode")
+      .eq("id", order.restaurant_id)
+      .maybeSingle();
+
+    if (!restaurant?.upi_vpa || !VPA_REGEX.test(restaurant.upi_vpa)) {
+      return {
+        ok: false as const,
+        error: "This restaurant has not configured UPI payouts yet.",
+      };
+    }
+
+    const uri = buildUpiUri({
+      vpa: restaurant.upi_vpa,
+      payeeName: restaurant.payee_name || restaurant.name,
+      amount: Number(order.total),
+      transactionRef: data.merchantTransactionId,
+      transactionNote: `QS-${order.id.slice(0, 6).toUpperCase()}`,
+    });
+
+    return {
+      ok: true as const,
+      upiUri: uri,
+      vpa: restaurant.upi_vpa,
+      payeeName: restaurant.payee_name || restaurant.name,
+      amount: Number(order.total),
+      paymentMode: restaurant.payment_mode,
+      paymentStatus: order.payment_status,
+    };
+  });
+
+const SubmitUtrSchema = z.object({
+  merchantTransactionId: z.string().min(1).max(100),
+  upiReferenceId: z
+    .string()
+    .trim()
+    .min(8)
+    .max(40)
+    .regex(/^[A-Za-z0-9]+$/, "UPI reference must be alphanumeric"),
+});
+
+/**
+ * Customer submits the UPI reference number (UTR) shown in their UPI app
+ * after paying. The order moves to `awaiting_verification` so the merchant
+ * can confirm receipt.
+ */
+export const submitUpiReference = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => SubmitUtrSchema.parse(input))
+  .handler(async ({ data }) => {
+    const { data: order, error } = await supabaseAdmin
+      .from("orders")
+      .select("id, payment_status, status")
+      .eq("phonepe_merchant_transaction_id", data.merchantTransactionId)
+      .maybeSingle();
+    if (error || !order) return { ok: false as const, error: "Order not found." };
+    if (order.payment_status === "success") {
+      return { ok: true as const, alreadyPaid: true };
+    }
+
+    const { error: updErr } = await supabaseAdmin
+      .from("orders")
+      .update({
+        status: "awaiting_verification",
+        upi_reference_id: data.upiReferenceId,
+      })
+      .eq("id", order.id);
+    if (updErr) return { ok: false as const, error: updErr.message };
+
+    return { ok: true as const };
+  });
+

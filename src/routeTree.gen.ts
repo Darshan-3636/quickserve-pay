@@ -19,6 +19,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as MerchantIndexRouteImport } from './routes/merchant.index'
 import { Route as PayTxnRouteImport } from './routes/pay.$txn'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
+import { Route as MerchantPaymentsRouteImport } from './routes/merchant.payments'
 import { Route as MerchantOrdersRouteImport } from './routes/merchant.orders'
 import { Route as MerchantMenuRouteImport } from './routes/merchant.menu'
 
@@ -72,6 +73,11 @@ const OrderIdRoute = OrderIdRouteImport.update({
   path: '/order/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MerchantPaymentsRoute = MerchantPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
+  getParentRoute: () => MerchantRoute,
+} as any)
 const MerchantOrdersRoute = MerchantOrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/orders': typeof OrdersRoute
   '/merchant/menu': typeof MerchantMenuRoute
   '/merchant/orders': typeof MerchantOrdersRoute
+  '/merchant/payments': typeof MerchantPaymentsRoute
   '/order/$id': typeof OrderIdRoute
   '/pay/$txn': typeof PayTxnRoute
   '/merchant/': typeof MerchantIndexRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/orders': typeof OrdersRoute
   '/merchant/menu': typeof MerchantMenuRoute
   '/merchant/orders': typeof MerchantOrdersRoute
+  '/merchant/payments': typeof MerchantPaymentsRoute
   '/order/$id': typeof OrderIdRoute
   '/pay/$txn': typeof PayTxnRoute
   '/merchant': typeof MerchantIndexRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/orders': typeof OrdersRoute
   '/merchant/menu': typeof MerchantMenuRoute
   '/merchant/orders': typeof MerchantOrdersRoute
+  '/merchant/payments': typeof MerchantPaymentsRoute
   '/order/$id': typeof OrderIdRoute
   '/pay/$txn': typeof PayTxnRoute
   '/merchant/': typeof MerchantIndexRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/orders'
     | '/merchant/menu'
     | '/merchant/orders'
+    | '/merchant/payments'
     | '/order/$id'
     | '/pay/$txn'
     | '/merchant/'
@@ -150,6 +160,7 @@ export interface FileRouteTypes {
     | '/orders'
     | '/merchant/menu'
     | '/merchant/orders'
+    | '/merchant/payments'
     | '/order/$id'
     | '/pay/$txn'
     | '/merchant'
@@ -164,6 +175,7 @@ export interface FileRouteTypes {
     | '/orders'
     | '/merchant/menu'
     | '/merchant/orders'
+    | '/merchant/payments'
     | '/order/$id'
     | '/pay/$txn'
     | '/merchant/'
@@ -253,6 +265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrderIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/merchant/payments': {
+      id: '/merchant/payments'
+      path: '/payments'
+      fullPath: '/merchant/payments'
+      preLoaderRoute: typeof MerchantPaymentsRouteImport
+      parentRoute: typeof MerchantRoute
+    }
     '/merchant/orders': {
       id: '/merchant/orders'
       path: '/orders'
@@ -273,12 +292,14 @@ declare module '@tanstack/react-router' {
 interface MerchantRouteChildren {
   MerchantMenuRoute: typeof MerchantMenuRoute
   MerchantOrdersRoute: typeof MerchantOrdersRoute
+  MerchantPaymentsRoute: typeof MerchantPaymentsRoute
   MerchantIndexRoute: typeof MerchantIndexRoute
 }
 
 const MerchantRouteChildren: MerchantRouteChildren = {
   MerchantMenuRoute: MerchantMenuRoute,
   MerchantOrdersRoute: MerchantOrdersRoute,
+  MerchantPaymentsRoute: MerchantPaymentsRoute,
   MerchantIndexRoute: MerchantIndexRoute,
 }
 

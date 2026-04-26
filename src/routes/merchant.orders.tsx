@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
+import { CheckCircle2, XCircle, Clock } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -25,20 +26,30 @@ const STATUS_FLOW: Record<string, { next: OrderStatus; label: string }> = {
 function MerchantOrders() {
   const { user } = useAuth();
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [pending, setPending] = useState<Order[]>([]);
+  const [active, setActive] = useState<Order[]>([]);
   const [selected, setSelected] = useState<Order | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
   const [code, setCode] = useState("");
 
   const reload = async (rid: string) => {
-    const { data } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("restaurant_id", rid)
-      .eq("payment_status", "success")
-      .in("status", ["received", "preparing", "ready"])
-      .order("created_at", { ascending: true });
-    setOrders((data ?? []) as Order[]);
+    const [{ data: pendingData }, { data: activeData }] = await Promise.all([
+      supabase
+        .from("orders")
+        .select("*")
+        .eq("restaurant_id", rid)
+        .eq("status", "awaiting_verification")
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("orders")
+        .select("*")
+        .eq("restaurant_id", rid)
+        .eq("payment_status", "success")
+        .in("status", ["received", "preparing", "ready"])
+        .order("created_at", { ascending: true }),
+    ]);
+    setPending((pendingData ?? []) as Order[]);
+    setActive((activeData ?? []) as Order[]);
   };
 
   useEffect(() => {
@@ -82,6 +93,32 @@ function MerchantOrders() {
     toast.success("Updated");
   };
 
+  const confirmPayment = async (o: Order) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        payment_status: "success",
+        status: "received",
+        paid_at: new Date().toISOString(),
+        manual_verified_by: user.id,
+      })
+      .eq("id", o.id);
+    if (error) return toast.error(error.message);
+    toast.success(`Order ${o.pickup_code} confirmed`);
+    if (restaurantId) await reload(restaurantId);
+  };
+
+  const rejectPayment = async (o: Order) => {
+    const { error } = await supabase
+      .from("orders")
+      .update({ payment_status: "failed", status: "cancelled" })
+      .eq("id", o.id);
+    if (error) return toast.error(error.message);
+    toast.success("Rejected");
+    if (restaurantId) await reload(restaurantId);
+  };
+
   const handover = async () => {
     if (!selected) return;
     const parsed = z.string().regex(/^\d{4}$/).safeParse(code.trim());
@@ -104,48 +141,104 @@ function MerchantOrders() {
     <div className="grid gap-4 p-4 md:grid-cols-[1fr_360px] md:p-6">
       <div>
         <h1 className="font-display text-3xl font-bold">Live Orders</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{orders.length} active</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {pending.length} awaiting payment confirmation · {active.length} active
+        </p>
 
-        <div className="mt-4 space-y-3">
-          {orders.map((o) => (
-            <button
-              key={o.id}
-              onClick={() => setSelected(o)}
-              className={`w-full rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${
-                selected?.id === o.id ? "border-primary bg-primary/5" : "border-border bg-card"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-primary">Code {o.pickup_code}</div>
-                  <div className="mt-0.5 text-sm font-semibold">{o.customer_name}</div>
-                  <div className="text-xs text-muted-foreground">{o.customer_phone}</div>
-                </div>
-                <div className="text-right">
-                  <div className="font-display text-lg font-bold">{formatINRDecimal(Number(o.total))}</div>
-                  <StatusPill status={o.status} />
-                </div>
-              </div>
-              {STATUS_FLOW[o.status] && (
-                <Button
-                  size="sm"
-                  className="mt-3 w-full rounded-full"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void advance(o);
-                  }}
-                >
-                  {STATUS_FLOW[o.status].label}
-                </Button>
-              )}
-            </button>
-          ))}
-          {orders.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-border p-12 text-center text-muted-foreground">
-              No active orders. They'll appear here in real-time.
+        {/* AWAITING VERIFICATION SECTION */}
+        {pending.length > 0 && (
+          <section className="mt-6">
+            <div className="mb-3 flex items-center gap-2">
+              <Clock className="h-4 w-4 text-amber-500" />
+              <h2 className="font-display text-lg font-bold">Awaiting payment confirmation</h2>
             </div>
-          )}
-        </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Customer says they paid via UPI. Check your UPI app / SMS for the credit, then confirm or reject.
+            </p>
+            <div className="space-y-3">
+              {pending.map((o) => (
+                <div key={o.id} className="rounded-2xl border border-amber-300/60 bg-amber-50/40 p-4 dark:bg-amber-950/20">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-widest text-amber-700">Code {o.pickup_code}</div>
+                      <div className="mt-0.5 text-sm font-semibold">{o.customer_name}</div>
+                      <div className="text-xs text-muted-foreground">{o.customer_phone}</div>
+                      <div className="mt-2 text-xs">
+                        <span className="text-muted-foreground">UPI Ref:</span>{" "}
+                        <code className="rounded bg-background/80 px-1.5 py-0.5 font-mono text-xs font-bold">
+                          {o.upi_reference_id ?? "—"}
+                        </code>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-display text-xl font-bold">{formatINRDecimal(Number(o.total))}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void rejectPayment(o)}
+                      className="rounded-full border-destructive/40 text-destructive hover:bg-destructive/10"
+                    >
+                      <XCircle className="mr-1.5 h-3.5 w-3.5" />
+                      Reject
+                    </Button>
+                    <Button size="sm" onClick={() => void confirmPayment(o)} className="rounded-full">
+                      <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                      Confirm received
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ACTIVE ORDERS */}
+        <section className="mt-8">
+          <h2 className="mb-3 font-display text-lg font-bold">Active</h2>
+          <div className="space-y-3">
+            {active.map((o) => (
+              <button
+                key={o.id}
+                onClick={() => setSelected(o)}
+                className={`w-full rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${
+                  selected?.id === o.id ? "border-primary bg-primary/5" : "border-border bg-card"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs uppercase tracking-widest text-primary">Code {o.pickup_code}</div>
+                    <div className="mt-0.5 text-sm font-semibold">{o.customer_name}</div>
+                    <div className="text-xs text-muted-foreground">{o.customer_phone}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-display text-lg font-bold">{formatINRDecimal(Number(o.total))}</div>
+                    <StatusPill status={o.status} />
+                  </div>
+                </div>
+                {STATUS_FLOW[o.status] && (
+                  <Button
+                    size="sm"
+                    className="mt-3 w-full rounded-full"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void advance(o);
+                    }}
+                  >
+                    {STATUS_FLOW[o.status].label}
+                  </Button>
+                )}
+              </button>
+            ))}
+            {active.length === 0 && pending.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-border p-12 text-center text-muted-foreground">
+                No active orders. They'll appear here in real-time.
+              </div>
+            )}
+          </div>
+        </section>
       </div>
 
       {/* Right panel */}
