@@ -209,7 +209,7 @@ function CheckoutPage() {
           <h1 className="font-display text-2xl font-bold">Your cart is empty</h1>
           <p className="mt-2 text-sm text-muted-foreground">Browse the menu to add some delicious dishes.</p>
           <Button asChild className="mt-6 rounded-full bg-gradient-spice text-primary-foreground shadow-glow hover:opacity-90">
-            <Link to="/menu">View menu</Link>
+            <Link to="/explore">Browse restaurants</Link>
           </Button>
         </div>
       </div>
