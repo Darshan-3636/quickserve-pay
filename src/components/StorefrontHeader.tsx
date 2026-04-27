@@ -37,7 +37,14 @@ export function StorefrontHeader() {
             activeProps={{ className: "rounded-full px-4 py-2 text-sm font-medium text-foreground bg-muted" }}
             activeOptions={{ exact: true }}
           >
-            Discover
+            Home
+          </Link>
+          <Link
+            to="/explore"
+            className="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            activeProps={{ className: "rounded-full px-4 py-2 text-sm font-medium text-foreground bg-muted" }}
+          >
+            Explore
           </Link>
           <Link
             to="/orders"
