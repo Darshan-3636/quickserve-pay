@@ -41,6 +41,13 @@ export type Database = {
             foreignKeyName: "menu_categories_restaurant_id_fkey"
             columns: ["restaurant_id"]
             isOneToOne: false
+            referencedRelation: "restaurant_stats"
+            referencedColumns: ["restaurant_id"]
+          },
+          {
+            foreignKeyName: "menu_categories_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
@@ -102,6 +109,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "menu_categories"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "menu_items_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurant_stats"
+            referencedColumns: ["restaurant_id"]
           },
           {
             foreignKeyName: "menu_items_restaurant_id_fkey"
@@ -175,6 +189,7 @@ export type Database = {
           paid_at: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
           phonepe_merchant_transaction_id: string | null
+          phonepe_order_id: string | null
           phonepe_transaction_id: string | null
           pickup_code: string
           ready_at: string | null
@@ -200,6 +215,7 @@ export type Database = {
           paid_at?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           phonepe_merchant_transaction_id?: string | null
+          phonepe_order_id?: string | null
           phonepe_transaction_id?: string | null
           pickup_code: string
           ready_at?: string | null
@@ -225,6 +241,7 @@ export type Database = {
           paid_at?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           phonepe_merchant_transaction_id?: string | null
+          phonepe_order_id?: string | null
           phonepe_transaction_id?: string | null
           pickup_code?: string
           ready_at?: string | null
@@ -237,6 +254,13 @@ export type Database = {
           upi_reference_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "orders_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurant_stats"
+            referencedColumns: ["restaurant_id"]
+          },
           {
             foreignKeyName: "orders_restaurant_id_fkey"
             columns: ["restaurant_id"]
@@ -365,7 +389,17 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      restaurant_stats: {
+        Row: {
+          avg_price: number | null
+          max_price: number | null
+          min_price: number | null
+          orders_count: number | null
+          restaurant_id: string | null
+          total_units_sold: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       claim_merchant_role: { Args: never; Returns: undefined }

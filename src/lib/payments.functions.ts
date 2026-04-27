@@ -1,8 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { generatePickupCode } from "@/lib/format";
 import { buildUpiUri, VPA_REGEX } from "@/lib/upi";
+import { phonepeCreatePayment, phonepeOrderStatus } from "@/lib/phonepe.server";
 
 const CartLineSchema = z.object({
   menu_item_id: z.string().uuid(),
@@ -269,5 +271,120 @@ export const submitUpiReference = createServerFn({ method: "POST" })
     if (updErr) return { ok: false as const, error: updErr.message };
 
     return { ok: true as const };
+  });
+
+// ---------------------------------------------------------------------------
+// PhonePe PG v2 — Sandbox
+// ---------------------------------------------------------------------------
+
+const StartPhonePeSchema = z.object({
+  orderId: z.string().uuid(),
+});
+
+/**
+ * Creates a PhonePe sandbox payment session for an existing pending order
+ * and returns the PhonePe-hosted checkout redirect URL.
+ */
+export const startPhonePePayment = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => StartPhonePeSchema.parse(input))
+  .handler(async ({ data }) => {
+    const { data: order, error } = await supabaseAdmin
+      .from("orders")
+      .select(
+        "id, total, payment_status, phonepe_merchant_transaction_id, phonepe_order_id"
+      )
+      .eq("id", data.orderId)
+      .maybeSingle();
+    if (error || !order) return { ok: false as const, error: "Order not found." };
+    if (order.payment_status === "success") {
+      return { ok: true as const, redirectUrl: null, alreadyPaid: true as const };
+    }
+    if (!order.phonepe_merchant_transaction_id) {
+      return { ok: false as const, error: "Order has no merchantTransactionId." };
+    }
+
+    // Build absolute redirect URL back to /pay/$txn so the user lands on our status page.
+    const req = getRequest();
+    const origin = req
+      ? `${req.headers.get("x-forwarded-proto") ?? "https"}://${
+          req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "localhost"
+        }`
+      : "";
+    const redirectUrl = `${origin}/pay/${order.phonepe_merchant_transaction_id}`;
+
+    try {
+      const res = await phonepeCreatePayment({
+        merchantOrderId: order.phonepe_merchant_transaction_id,
+        amountPaise: Math.round(Number(order.total) * 100),
+        redirectUrl,
+        message: `QuickServe order ${order.id.slice(0, 6).toUpperCase()}`,
+      });
+
+      await supabaseAdmin
+        .from("orders")
+        .update({ phonepe_order_id: res.orderId })
+        .eq("id", order.id);
+
+      return { ok: true as const, redirectUrl: res.redirectUrl, alreadyPaid: false as const };
+    } catch (err) {
+      console.error("PhonePe create-payment error:", err);
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : "PhonePe error",
+      };
+    }
+  });
+
+const RefreshStatusSchema = z.object({
+  merchantTransactionId: z.string().min(1).max(100),
+});
+
+/**
+ * Polls PhonePe for order status and updates our `orders` row accordingly.
+ * Safe to call repeatedly from the /pay/$txn page.
+ */
+export const refreshPhonePeStatus = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => RefreshStatusSchema.parse(input))
+  .handler(async ({ data }) => {
+    const { data: order } = await supabaseAdmin
+      .from("orders")
+      .select("id, payment_status, status, phonepe_merchant_transaction_id")
+      .eq("phonepe_merchant_transaction_id", data.merchantTransactionId)
+      .maybeSingle();
+    if (!order) return { ok: false as const, error: "Order not found." };
+    if (order.payment_status === "success") {
+      return { ok: true as const, state: "COMPLETED" as const };
+    }
+    try {
+      const status = await phonepeOrderStatus(data.merchantTransactionId);
+      const tx = status.paymentDetails?.[0];
+      if (status.state === "COMPLETED") {
+        await supabaseAdmin
+          .from("orders")
+          .update({
+            payment_status: "success",
+            status: "received",
+            paid_at: new Date().toISOString(),
+            phonepe_transaction_id: tx?.transactionId ?? status.orderId,
+            phonepe_order_id: status.orderId,
+          })
+          .eq("id", order.id);
+        return { ok: true as const, state: "COMPLETED" as const };
+      }
+      if (status.state === "FAILED") {
+        await supabaseAdmin
+          .from("orders")
+          .update({ payment_status: "failed", status: "cancelled" })
+          .eq("id", order.id);
+        return { ok: true as const, state: "FAILED" as const };
+      }
+      return { ok: true as const, state: "PENDING" as const };
+    } catch (err) {
+      console.error("PhonePe status error:", err);
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : "PhonePe status error",
+      };
+    }
   });
 

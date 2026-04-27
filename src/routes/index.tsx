@@ -114,7 +114,7 @@ function HomePage() {
               <Button
                 size="lg"
                 className="rounded-full bg-gradient-spice px-7 text-base font-semibold text-primary-foreground shadow-glow hover:opacity-90"
-                onClick={() => navigate({ to: "/menu" })}
+                onClick={() => navigate({ to: "/explore" })}
               >
                 Order now
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -182,10 +182,10 @@ function HomePage() {
             <p className="mt-1 text-sm text-muted-foreground">Hand-selected from our kitchen.</p>
           </div>
           <Link
-            to="/menu"
+            to="/explore"
             className="hidden items-center gap-1 text-sm font-semibold text-primary hover:text-primary/80 md:inline-flex"
           >
-            View full menu <ArrowRight className="h-4 w-4" />
+            Explore restaurants <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
 

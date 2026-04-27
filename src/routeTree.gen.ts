@@ -12,16 +12,19 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as MerchantRouteImport } from './routes/merchant'
 import { Route as MenuRouteImport } from './routes/menu'
+import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as BecomeMerchantRouteImport } from './routes/become-merchant'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as MerchantIndexRouteImport } from './routes/merchant.index'
+import { Route as RSlugRouteImport } from './routes/r.$slug'
 import { Route as PayTxnRouteImport } from './routes/pay.$txn'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
 import { Route as MerchantPaymentsRouteImport } from './routes/merchant.payments'
 import { Route as MerchantOrdersRouteImport } from './routes/merchant.orders'
 import { Route as MerchantMenuRouteImport } from './routes/merchant.menu'
+import { Route as ApiPublicPhonepeCallbackRouteImport } from './routes/api.public.phonepe-callback'
 
 const OrdersRoute = OrdersRouteImport.update({
   id: '/orders',
@@ -36,6 +39,11 @@ const MerchantRoute = MerchantRouteImport.update({
 const MenuRoute = MenuRouteImport.update({
   id: '/menu',
   path: '/menu',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExploreRoute = ExploreRouteImport.update({
+  id: '/explore',
+  path: '/explore',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CheckoutRoute = CheckoutRouteImport.update({
@@ -63,6 +71,11 @@ const MerchantIndexRoute = MerchantIndexRouteImport.update({
   path: '/',
   getParentRoute: () => MerchantRoute,
 } as any)
+const RSlugRoute = RSlugRouteImport.update({
+  id: '/r/$slug',
+  path: '/r/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PayTxnRoute = PayTxnRouteImport.update({
   id: '/pay/$txn',
   path: '/pay/$txn',
@@ -88,12 +101,19 @@ const MerchantMenuRoute = MerchantMenuRouteImport.update({
   path: '/menu',
   getParentRoute: () => MerchantRoute,
 } as any)
+const ApiPublicPhonepeCallbackRoute =
+  ApiPublicPhonepeCallbackRouteImport.update({
+    id: '/api/public/phonepe-callback',
+    path: '/api/public/phonepe-callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/become-merchant': typeof BecomeMerchantRoute
   '/checkout': typeof CheckoutRoute
+  '/explore': typeof ExploreRoute
   '/menu': typeof MenuRoute
   '/merchant': typeof MerchantRouteWithChildren
   '/orders': typeof OrdersRoute
@@ -102,13 +122,16 @@ export interface FileRoutesByFullPath {
   '/merchant/payments': typeof MerchantPaymentsRoute
   '/order/$id': typeof OrderIdRoute
   '/pay/$txn': typeof PayTxnRoute
+  '/r/$slug': typeof RSlugRoute
   '/merchant/': typeof MerchantIndexRoute
+  '/api/public/phonepe-callback': typeof ApiPublicPhonepeCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/become-merchant': typeof BecomeMerchantRoute
   '/checkout': typeof CheckoutRoute
+  '/explore': typeof ExploreRoute
   '/menu': typeof MenuRoute
   '/orders': typeof OrdersRoute
   '/merchant/menu': typeof MerchantMenuRoute
@@ -116,7 +139,9 @@ export interface FileRoutesByTo {
   '/merchant/payments': typeof MerchantPaymentsRoute
   '/order/$id': typeof OrderIdRoute
   '/pay/$txn': typeof PayTxnRoute
+  '/r/$slug': typeof RSlugRoute
   '/merchant': typeof MerchantIndexRoute
+  '/api/public/phonepe-callback': typeof ApiPublicPhonepeCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -124,6 +149,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/become-merchant': typeof BecomeMerchantRoute
   '/checkout': typeof CheckoutRoute
+  '/explore': typeof ExploreRoute
   '/menu': typeof MenuRoute
   '/merchant': typeof MerchantRouteWithChildren
   '/orders': typeof OrdersRoute
@@ -132,7 +158,9 @@ export interface FileRoutesById {
   '/merchant/payments': typeof MerchantPaymentsRoute
   '/order/$id': typeof OrderIdRoute
   '/pay/$txn': typeof PayTxnRoute
+  '/r/$slug': typeof RSlugRoute
   '/merchant/': typeof MerchantIndexRoute
+  '/api/public/phonepe-callback': typeof ApiPublicPhonepeCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,6 +169,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/become-merchant'
     | '/checkout'
+    | '/explore'
     | '/menu'
     | '/merchant'
     | '/orders'
@@ -149,13 +178,16 @@ export interface FileRouteTypes {
     | '/merchant/payments'
     | '/order/$id'
     | '/pay/$txn'
+    | '/r/$slug'
     | '/merchant/'
+    | '/api/public/phonepe-callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/become-merchant'
     | '/checkout'
+    | '/explore'
     | '/menu'
     | '/orders'
     | '/merchant/menu'
@@ -163,13 +195,16 @@ export interface FileRouteTypes {
     | '/merchant/payments'
     | '/order/$id'
     | '/pay/$txn'
+    | '/r/$slug'
     | '/merchant'
+    | '/api/public/phonepe-callback'
   id:
     | '__root__'
     | '/'
     | '/auth'
     | '/become-merchant'
     | '/checkout'
+    | '/explore'
     | '/menu'
     | '/merchant'
     | '/orders'
@@ -178,7 +213,9 @@ export interface FileRouteTypes {
     | '/merchant/payments'
     | '/order/$id'
     | '/pay/$txn'
+    | '/r/$slug'
     | '/merchant/'
+    | '/api/public/phonepe-callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -186,11 +223,14 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   BecomeMerchantRoute: typeof BecomeMerchantRoute
   CheckoutRoute: typeof CheckoutRoute
+  ExploreRoute: typeof ExploreRoute
   MenuRoute: typeof MenuRoute
   MerchantRoute: typeof MerchantRouteWithChildren
   OrdersRoute: typeof OrdersRoute
   OrderIdRoute: typeof OrderIdRoute
   PayTxnRoute: typeof PayTxnRoute
+  RSlugRoute: typeof RSlugRoute
+  ApiPublicPhonepeCallbackRoute: typeof ApiPublicPhonepeCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -214,6 +254,13 @@ declare module '@tanstack/react-router' {
       path: '/menu'
       fullPath: '/menu'
       preLoaderRoute: typeof MenuRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/explore': {
+      id: '/explore'
+      path: '/explore'
+      fullPath: '/explore'
+      preLoaderRoute: typeof ExploreRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/checkout': {
@@ -251,6 +298,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MerchantIndexRouteImport
       parentRoute: typeof MerchantRoute
     }
+    '/r/$slug': {
+      id: '/r/$slug'
+      path: '/r/$slug'
+      fullPath: '/r/$slug'
+      preLoaderRoute: typeof RSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pay/$txn': {
       id: '/pay/$txn'
       path: '/pay/$txn'
@@ -286,6 +340,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MerchantMenuRouteImport
       parentRoute: typeof MerchantRoute
     }
+    '/api/public/phonepe-callback': {
+      id: '/api/public/phonepe-callback'
+      path: '/api/public/phonepe-callback'
+      fullPath: '/api/public/phonepe-callback'
+      preLoaderRoute: typeof ApiPublicPhonepeCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -312,11 +373,14 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   BecomeMerchantRoute: BecomeMerchantRoute,
   CheckoutRoute: CheckoutRoute,
+  ExploreRoute: ExploreRoute,
   MenuRoute: MenuRoute,
   MerchantRoute: MerchantRouteWithChildren,
   OrdersRoute: OrdersRoute,
   OrderIdRoute: OrderIdRoute,
   PayTxnRoute: PayTxnRoute,
+  RSlugRoute: RSlugRoute,
+  ApiPublicPhonepeCallbackRoute: ApiPublicPhonepeCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
