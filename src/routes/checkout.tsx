@@ -6,7 +6,7 @@ import { z } from "zod";
 import { useAuth } from "@/lib/auth-context";
 import { useCart, cartStore } from "@/lib/cart-store";
 import { supabase } from "@/integrations/supabase/client";
-import { initiatePayment } from "@/lib/payments.functions";
+import { initiatePayment, startPhonePePayment } from "@/lib/payments.functions";
 import { generatePickupCode, formatINR, formatINRDecimal, estimateWaitMinutes } from "@/lib/format";
 import { StorefrontHeader } from "@/components/StorefrontHeader";
 import { DietBadge } from "@/components/DietBadge";
@@ -173,7 +173,19 @@ function CheckoutPage() {
       }))
     );
 
-    // Off to simulated PhonePe pay screen
+    // Kick off PhonePe sandbox checkout. If credentials aren't configured we
+    // fall back to the on-site UPI / UTR page.
+    const phonepe = await startPhonePePayment({ data: { orderId: order.id } }).catch(
+      (e) => ({ ok: false as const, error: String(e?.message ?? e) })
+    );
+    if (phonepe.ok && phonepe.redirectUrl) {
+      window.location.href = phonepe.redirectUrl;
+      return;
+    }
+    if (!phonepe.ok) {
+      console.warn("PhonePe init failed, falling back to UPI page:", phonepe.error);
+      toast.message("Opening UPI payment", { description: "PhonePe checkout unavailable, using UPI fallback." });
+    }
     navigate({ to: "/pay/$txn", params: { txn: init.merchantTransactionId } });
   };
 
