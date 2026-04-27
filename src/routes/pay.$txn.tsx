@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { Smartphone, CheckCircle2, XCircle, Loader2, Copy, ExternalLink, Clock } from "lucide-react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
-import { getOrderUpiLink, submitUpiReference } from "@/lib/payments.functions";
+import { getOrderUpiLink, submitUpiReference, refreshPhonePeStatus } from "@/lib/payments.functions";
 import { cartStore } from "@/lib/cart-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,11 +73,16 @@ function PayPage() {
     };
   }, [txn]);
 
-  // Poll for merchant confirmation every 4s — stop once paid/failed
+  // Poll for status every 4s — first ask PhonePe (sandbox) then re-read our order row.
+  // Stops once paid/failed.
   useEffect(() => {
     if (!order) return;
     if (order.payment_status === "success" || order.payment_status === "failed") return;
-    const id = setInterval(async () => {
+    const tick = async () => {
+      // Ask PhonePe; this also updates our orders row server-side.
+      await refreshPhonePeStatus({
+        data: { merchantTransactionId: txn },
+      }).catch(() => undefined);
       const { data } = await supabase
         .from("orders")
         .select("*")
@@ -91,7 +96,9 @@ function PayPage() {
           navigate({ to: "/order/$id", params: { id: data.id } });
         }
       }
-    }, 4000);
+    };
+    void tick();
+    const id = setInterval(() => void tick(), 4000);
     return () => clearInterval(id);
   }, [order, txn, navigate]);
 
