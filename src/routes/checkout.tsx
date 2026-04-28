@@ -1,13 +1,12 @@
-import { createFileRoute, Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Minus, Plus, ShoppingBag, Trash2, Clock } from "lucide-react";
 import { z } from "zod";
-import { useAuth } from "@/lib/auth-context";
 import { useCart, cartStore } from "@/lib/cart-store";
 import { supabase } from "@/integrations/supabase/client";
-import { initiatePayment, startPhonePePayment } from "@/lib/payments.functions";
-import { generatePickupCode, formatINR, formatINRDecimal, estimateWaitMinutes } from "@/lib/format";
+import { createGuestOrderAndPay } from "@/lib/payments.functions";
+import { formatINR, formatINRDecimal, estimateWaitMinutes } from "@/lib/format";
 import { StorefrontHeader } from "@/components/StorefrontHeader";
 import { DietBadge } from "@/components/DietBadge";
 import { resolveDishImage } from "@/lib/dish-images";
@@ -23,22 +22,24 @@ export const Route = createFileRoute("/checkout")({
   head: () => ({
     meta: [
       { title: "Checkout — QuickServe" },
-      { name: "description", content: "Review your cart, pay with PhonePe UPI, and get a 4-digit pickup code." },
+      { name: "description", content: "Enter your name & phone, pay with PhonePe, get a 4-digit pickup code." },
     ],
   }),
   component: CheckoutPage,
 });
 
 const checkoutSchema = z.object({
-  customerName: z.string().trim().min(1).max(100),
-  customerPhone: z.string().trim().min(10).max(15).regex(/^[0-9+\-\s]+$/, "Invalid phone"),
+  customerName: z.string().trim().min(1, "Name is required").max(100),
+  customerPhone: z
+    .string()
+    .trim()
+    .min(10, "Enter a valid mobile number")
+    .max(15)
+    .regex(/^[0-9+\-\s]+$/, "Invalid phone"),
 });
 
 function CheckoutPage() {
   const cart = useCart();
-  const { user, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
-  const { location } = useRouterState();
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [activeOrders, setActiveOrders] = useState(0);
   const [name, setName] = useState("");
@@ -67,20 +68,6 @@ function CheckoutPage() {
     };
   }, [cart.restaurantId]);
 
-  // Prefill from auth profile
-  useEffect(() => {
-    if (!user) return;
-    void (async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("display_name, phone")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (data?.display_name) setName(data.display_name);
-      if (data?.phone) setPhone(data.phone);
-    })();
-  }, [user]);
-
   const totals = useMemo(() => {
     const subtotal = cart.subtotal;
     const gst = restaurant ? (subtotal * Number(restaurant.gst_percentage)) / 100 : 0;
@@ -94,10 +81,6 @@ function CheckoutPage() {
   const waitMinutes = estimateWaitMinutes(activeOrders, cart.maxPrep);
 
   const handlePay = async () => {
-    if (!user) {
-      navigate({ to: "/auth", search: { redirect: location.pathname } });
-      return;
-    }
     const parsed = checkoutSchema.safeParse({ customerName: name, customerPhone: phone });
     if (!parsed.success) {
       const errs: Record<string, string> = {};
@@ -110,13 +93,11 @@ function CheckoutPage() {
     setBusy(true);
     setErrors({});
 
-    // Server computes authoritative total and pickup code
-    const init = await initiatePayment({
+    const res = await createGuestOrderAndPay({
       data: {
         restaurantId: cart.restaurantId,
         customerName: name,
         customerPhone: phone,
-        containerCharge: totals.containerCharge,
         lines: cart.lines.map((l) => ({
           menu_item_id: l.item.id,
           name: l.item.name,
@@ -125,78 +106,31 @@ function CheckoutPage() {
           diet: l.item.diet,
         })),
       },
-    });
+    }).catch((e: unknown) => ({
+      ok: false as const,
+      error: e instanceof Error ? e.message : String(e),
+    }));
 
-    if (!init.ok) {
-      toast.error(init.error);
+    if (!res.ok) {
+      toast.error(res.error || "Could not start payment");
       setBusy(false);
       return;
     }
 
-    // Insert the order client-side (RLS lets the customer create their own order)
-    const { data: order, error: orderErr } = await supabase
-      .from("orders")
-      .insert({
-        restaurant_id: cart.restaurantId,
-        customer_id: user.id,
-        customer_name: name,
-        customer_phone: phone,
-        pickup_code: init.pickupCode,
-        status: "pending_payment",
-        payment_status: "pending",
-        subtotal: init.subtotal,
-        cgst: init.cgst,
-        sgst: init.sgst,
-        container_charge: init.containerCharge,
-        total: init.total,
-        estimated_wait_minutes: waitMinutes,
-        phonepe_merchant_transaction_id: init.merchantTransactionId,
-      })
-      .select()
-      .single();
+    // Persist txn id locally so the success page can retrieve it on return.
+    try {
+      sessionStorage.setItem(`qs_txn_${res.merchantTransactionId}`, res.orderId);
+    } catch {
+      /* ignore */
+    }
 
-    if (orderErr || !order) {
-      toast.error(orderErr?.message ?? "Could not create order");
-      setBusy(false);
+    if (res.redirectUrl) {
+      window.location.href = res.redirectUrl;
       return;
     }
-
-    // Insert order items
-    await supabase.from("order_items").insert(
-      init.lines.map((l) => ({
-        order_id: order.id,
-        menu_item_id: l.menu_item_id,
-        name: l.name,
-        unit_price: l.unit_price,
-        quantity: l.quantity,
-        diet: l.diet,
-      }))
-    );
-
-    // Kick off PhonePe sandbox checkout. If credentials aren't configured we
-    // fall back to the on-site UPI / UTR page.
-    const phonepe = await startPhonePePayment({ data: { orderId: order.id } }).catch(
-      (e) => ({ ok: false as const, error: String(e?.message ?? e) })
-    );
-    if (phonepe.ok && phonepe.redirectUrl) {
-      window.location.href = phonepe.redirectUrl;
-      return;
-    }
-    if (!phonepe.ok) {
-      console.warn("PhonePe init failed, falling back to UPI page:", phonepe.error);
-      toast.message("Opening UPI payment", { description: "PhonePe checkout unavailable, using UPI fallback." });
-    }
-    navigate({ to: "/pay/$txn", params: { txn: init.merchantTransactionId } });
+    // Fallback (shouldn't happen with PhonePe configured)
+    window.location.href = `/pay/${res.merchantTransactionId}`;
   };
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <StorefrontHeader />
-        <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
 
   if (cart.lines.length === 0) {
     return (
@@ -209,7 +143,7 @@ function CheckoutPage() {
           <h1 className="font-display text-2xl font-bold">Your cart is empty</h1>
           <p className="mt-2 text-sm text-muted-foreground">Browse the menu to add some delicious dishes.</p>
           <Button asChild className="mt-6 rounded-full bg-gradient-spice text-primary-foreground shadow-glow hover:opacity-90">
-            <Link to="/explore">Browse restaurants</Link>
+            <Link to="/explore">Browse menu</Link>
           </Button>
         </div>
       </div>
@@ -224,7 +158,6 @@ function CheckoutPage() {
           <h1 className="font-display text-3xl font-bold md:text-4xl">Checkout</h1>
           <p className="mt-1 text-sm text-muted-foreground">{restaurant?.name}</p>
 
-          {/* Cart lines */}
           <div className="mt-6 space-y-3">
             {cart.lines.map(({ item, quantity }) => (
               <motion.div
@@ -268,10 +201,9 @@ function CheckoutPage() {
             ))}
           </div>
 
-          {/* Customer details */}
           <div className="mt-8">
             <h2 className="font-display text-lg font-bold">Pickup details</h2>
-            <p className="text-sm text-muted-foreground">We'll text the pickup code to this number.</p>
+            <p className="text-sm text-muted-foreground">No account needed. Just your name & phone.</p>
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="cn">Name</Label>
@@ -294,7 +226,6 @@ function CheckoutPage() {
           </div>
         </div>
 
-        {/* Summary */}
         <aside className="md:sticky md:top-24 md:self-start">
           <div className="rounded-3xl border border-border/50 bg-card-gradient p-5 shadow-elegant">
             <h2 className="font-display text-lg font-bold">Order summary</h2>
@@ -323,10 +254,10 @@ function CheckoutPage() {
               size="lg"
               className="mt-5 w-full rounded-full bg-gradient-spice text-base font-semibold text-primary-foreground shadow-glow hover:opacity-90"
             >
-              {busy ? "Processing..." : `Pay ${formatINRDecimal(totals.total)} with UPI`}
+              {busy ? "Redirecting to PhonePe..." : `Pay ${formatINRDecimal(totals.total)} with PhonePe`}
             </Button>
             <p className="mt-2 text-center text-[11px] text-muted-foreground">
-              Secured by PhonePe (sandbox simulator active)
+              Secured by PhonePe (sandbox)
             </p>
           </div>
         </aside>
@@ -353,6 +284,3 @@ function Row({
     </div>
   );
 }
-
-// Avoid unused imports lint
-void generatePickupCode;
