@@ -403,6 +403,10 @@ export type Database = {
     }
     Functions: {
       claim_merchant_role: { Args: never; Returns: undefined }
+      generate_unique_pickup_code: {
+        Args: { _restaurant_id: string }
+        Returns: string
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
