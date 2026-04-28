@@ -1,9 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, Clock, ShieldCheck, Sparkles, Smartphone } from "lucide-react";
+import { ArrowRight, Clock, ShieldCheck, Sparkles, Smartphone, ChefHat } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { seedDemoRestaurant } from "@/lib/seed.functions";
+import { ensureMerchantSeed } from "@/lib/seed.functions";
 import { resolveDishImage, heroImage } from "@/lib/dish-images";
 import { StorefrontHeader } from "@/components/StorefrontHeader";
 import { DietBadge } from "@/components/DietBadge";
@@ -23,7 +23,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Pre-paid Indian food ordering. Browse the menu, pay with UPI, walk in with a 4-digit code. No queues.",
+          "Pre-paid food ordering. Browse the menu, pay with PhonePe, walk in with a 4-digit code. No account needed.",
       },
       { property: "og:title", content: "QuickServe — Order, pay & pickup with UPI" },
       {
@@ -44,19 +44,17 @@ function HomePage() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      // Seed demo restaurant on first load
-      const seedRes = await seedDemoRestaurant({ data: {} }).catch((e) => ({
-        ok: false as const,
-        error: String(e),
-      }));
-      if (!seedRes.ok) {
-        console.error("Seed failed:", seedRes.error);
-      }
+      // Seed merchant + restaurant on first load (idempotent)
+      await ensureMerchantSeed({ data: undefined as never }).catch((e: unknown) => {
+        console.error("Seed failed:", e);
+      });
 
       const { data: rest } = await supabase
         .from("restaurants")
         .select("*")
-        .eq("slug", "spice-junction")
+        .eq("is_active", true)
+        .order("created_at")
+        .limit(1)
         .maybeSingle();
 
       if (cancelled) return;
@@ -89,7 +87,6 @@ function HomePage() {
     <div className="min-h-screen bg-background">
       <StorefrontHeader />
 
-      {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-radial-glow" aria-hidden />
         <div className="relative mx-auto grid max-w-7xl grid-cols-1 gap-10 px-4 py-16 md:grid-cols-2 md:gap-6 md:px-6 md:py-24">
@@ -101,14 +98,14 @@ function HomePage() {
           >
             <div className="mb-4 inline-flex w-fit items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
               <Sparkles className="h-3.5 w-3.5" />
-              Pre-paid orders. Verified by UPI.
+              Pre-paid orders. Verified by PhonePe.
             </div>
             <h1 className="font-display text-5xl font-extrabold leading-[1.05] tracking-tight md:text-7xl">
               Skip the queue. <br />
               <span className="text-gradient-spice">Eat sooner.</span>
             </h1>
             <p className="mt-6 max-w-md text-lg text-muted-foreground">
-              Order from {restaurant?.name ?? "Spice Junction"}, pay instantly with PhonePe UPI, and walk in with your 4-digit pickup code. That's it.
+              Order from {restaurant?.name ?? "our kitchen"}, pay instantly with PhonePe, and walk in with your 4-digit pickup code. No sign-up required.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Button
@@ -119,21 +116,13 @@ function HomePage() {
                 Order now
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="rounded-full border-border/60 bg-card/50 px-7 text-base hover:bg-card"
-                onClick={() => navigate({ to: "/become-merchant" })}
-              >
-                For restaurants
-              </Button>
             </div>
 
             <div className="mt-10 grid grid-cols-3 gap-4">
               {[
                 { icon: ShieldCheck, label: "100% pre-paid", desc: "PhonePe verified" },
                 { icon: Clock, label: "~15 min", desc: "Avg. ready time" },
-                { icon: Smartphone, label: "UPI Intent", desc: "One-tap pay" },
+                { icon: Smartphone, label: "No login", desc: "Just name & phone" },
               ].map((f) => (
                 <div key={f.label} className="rounded-2xl border border-border/40 bg-card/40 p-3 backdrop-blur">
                   <f.icon className="h-5 w-5 text-primary" />
@@ -163,7 +152,7 @@ function HomePage() {
               <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between">
                 <div>
                   <div className="text-xs uppercase tracking-widest text-primary/90">Featured</div>
-                  <div className="font-display text-2xl font-bold">Royal Thali</div>
+                  <div className="font-display text-2xl font-bold">{restaurant?.name ?? "Today's specials"}</div>
                 </div>
                 <div className="rounded-full bg-background/80 px-3 py-1.5 text-sm font-bold text-primary backdrop-blur">
                   {formatINR(420)}
@@ -174,18 +163,17 @@ function HomePage() {
         </div>
       </section>
 
-      {/* Featured grid */}
       <section className="mx-auto max-w-7xl px-4 pb-20 md:px-6">
         <div className="mb-8 flex items-end justify-between">
           <div>
-            <h2 className="font-display text-3xl font-bold md:text-4xl">Tonight's picks</h2>
+            <h2 className="font-display text-3xl font-bold md:text-4xl">Today's picks</h2>
             <p className="mt-1 text-sm text-muted-foreground">Hand-selected from our kitchen.</p>
           </div>
           <Link
             to="/explore"
             className="hidden items-center gap-1 text-sm font-semibold text-primary hover:text-primary/80 md:inline-flex"
           >
-            Explore restaurants <ArrowRight className="h-4 w-4" />
+            Full menu <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
 
@@ -241,13 +229,25 @@ function HomePage() {
                 </div>
               </motion.article>
             ))}
+            {featured.length === 0 && (
+              <div className="col-span-full rounded-3xl border border-dashed border-border p-12 text-center text-muted-foreground">
+                Menu is being prepared. Check back soon.
+              </div>
+            )}
           </div>
         )}
       </section>
 
       <footer className="border-t border-border/40 bg-card/30 py-8">
-        <div className="mx-auto max-w-7xl px-4 text-center text-sm text-muted-foreground md:px-6">
-          QuickServe · Built for India · Powered by UPI
+        <div className="mx-auto flex max-w-7xl flex-col items-center gap-3 px-4 text-center text-sm text-muted-foreground md:px-6">
+          <div>QuickServe · Built for India · Powered by UPI</div>
+          <Link
+            to="/auth"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 hover:text-muted-foreground"
+          >
+            <ChefHat className="h-3 w-3" />
+            Merchant login
+          </Link>
         </div>
       </footer>
     </div>
