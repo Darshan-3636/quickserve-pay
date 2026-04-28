@@ -2,8 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { generatePickupCode } from "@/lib/format";
-import { buildUpiUri, VPA_REGEX } from "@/lib/upi";
 import { phonepeCreatePayment, phonepeOrderStatus } from "@/lib/phonepe.server";
 
 const CartLineSchema = z.object({
@@ -14,30 +12,22 @@ const CartLineSchema = z.object({
   diet: z.enum(["veg", "non_veg", "egg"]),
 });
 
-const InitiatePaymentSchema = z.object({
+const CreateOrderSchema = z.object({
   restaurantId: z.string().uuid(),
-  customerName: z.string().min(1).max(100),
-  customerPhone: z.string().min(10).max(15).regex(/^[0-9+\-\s]+$/),
+  customerName: z.string().trim().min(1).max(100),
+  customerPhone: z.string().trim().min(10).max(15).regex(/^[0-9+\-\s]+$/),
   lines: z.array(CartLineSchema).min(1).max(50),
-  containerCharge: z.number().nonnegative().max(1000),
 });
 
 /**
- * Initiates a payment.
+ * Creates a pending guest order (no customer_id, no pickup_code yet) and
+ * starts a PhonePe sandbox payment. Returns the redirect URL.
  *
- * REAL PHONEPE FLOW (when wired):
- *   1. Compute total server-side from menu_items prices.
- *   2. POST to PhonePe /pg/v1/pay with X-VERIFY = SHA256(payload + endpoint + saltKey) + ## + saltIndex.
- *   3. Return the redirect/intent URL to client.
- *   4. PhonePe later POSTs PAYMENT_SUCCESS to /api/public/phonepe-callback.
- *
- * SIMULATED FLOW (current):
- *   - Creates the order in `pending_payment` state with a merchantTransactionId.
- *   - Returns a simulatedPayUrl pointing at /pay/$txnId where the user can confirm.
- *   - The /pay route calls confirmSimulatedPayment which marks the order paid.
+ * The unique 4-digit pickup code is generated ONLY after PhonePe confirms the
+ * payment (see refreshPhonePeStatus / phonepe-callback).
  */
-export const initiatePayment = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => InitiatePaymentSchema.parse(input))
+export const createGuestOrderAndPay = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => CreateOrderSchema.parse(input))
   .handler(async ({ data }) => {
     // Re-fetch authoritative prices server-side. NEVER trust client prices.
     const itemIds = data.lines.map((l) => l.menu_item_id);
@@ -62,7 +52,6 @@ export const initiatePayment = createServerFn({ method: "POST" })
       }
     }
 
-    // Get restaurant for GST + container charge config
     const { data: restaurant, error: restErr } = await supabaseAdmin
       .from("restaurants")
       .select("id, gst_percentage, container_charge")
@@ -73,7 +62,6 @@ export const initiatePayment = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Restaurant not found." };
     }
 
-    // Server-authoritative subtotal
     const subtotal = data.lines.reduce((sum, line) => {
       const item = itemMap.get(line.menu_item_id)!;
       return sum + Number(item.price) * line.quantity;
@@ -86,7 +74,6 @@ export const initiatePayment = createServerFn({ method: "POST" })
     const containerCharge = Number(restaurant.container_charge) || 0;
     const total = +(subtotal + cgst + sgst + containerCharge).toFixed(2);
 
-    // Wait time estimate
     const { count: activeCount } = await supabaseAdmin
       .from("orders")
       .select("*", { count: "exact", head: true })
@@ -98,234 +85,77 @@ export const initiatePayment = createServerFn({ method: "POST" })
     );
     const estimatedWait = (activeCount ?? 0) * 3 + maxPrep;
 
-    const merchantTransactionId = `QS_${Date.now()}_${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    const pickupCode = generatePickupCode();
+    const merchantTransactionId = `QS_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 8)
+      .toUpperCase()}`;
 
-    // We need the customer's user id. The client passes auth header via supabase RLS,
-    // but for simplicity we look up auth.users via service role using customer_phone is not safe.
-    // Instead we rely on the auth context: we'll require the caller to pass a sessionToken.
-    // For v1, we accept anon-creates by setting customer_id from JWT in middleware later.
-    // Here we use service role and require customer_id at the orders table — pull from secret cookie? Skip for sim.
+    // Insert pending order with NO pickup code yet (placeholder "----").
+    const { data: order, error: insertErr } = await supabaseAdmin
+      .from("orders")
+      .insert({
+        restaurant_id: data.restaurantId,
+        customer_id: null, // guest order
+        customer_name: data.customerName,
+        customer_phone: data.customerPhone,
+        pickup_code: "----",
+        status: "pending_payment",
+        payment_status: "pending",
+        subtotal: +subtotal.toFixed(2),
+        cgst,
+        sgst,
+        container_charge: containerCharge,
+        total,
+        estimated_wait_minutes: estimatedWait,
+        phonepe_merchant_transaction_id: merchantTransactionId,
+      })
+      .select("id")
+      .single();
 
-    return {
-      ok: true as const,
-      merchantTransactionId,
-      pickupCode,
-      subtotal: +subtotal.toFixed(2),
-      cgst,
-      sgst,
-      containerCharge,
-      total,
-      estimatedWait,
-      lines: data.lines.map((l) => {
+    if (insertErr || !order) {
+      return { ok: false as const, error: insertErr?.message ?? "Could not create order." };
+    }
+
+    await supabaseAdmin.from("order_items").insert(
+      data.lines.map((l) => {
         const item = itemMap.get(l.menu_item_id)!;
         return {
+          order_id: order.id,
           menu_item_id: l.menu_item_id,
           name: item.name,
           unit_price: Number(item.price),
           quantity: l.quantity,
           diet: item.diet,
         };
-      }),
-    };
-  });
-
-const ConfirmPaymentSchema = z.object({
-  merchantTransactionId: z.string().min(1).max(100),
-  outcome: z.enum(["success", "failed"]),
-});
-
-/**
- * Confirms a simulated payment outcome.
- * In real PhonePe flow, this happens via the webhook at /api/public/phonepe-callback
- * with X-VERIFY signature checked. Here we just toggle the status.
- */
-export const confirmSimulatedPayment = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => ConfirmPaymentSchema.parse(input))
-  .handler(async ({ data }) => {
-    const { data: order, error } = await supabaseAdmin
-      .from("orders")
-      .select("id, status, payment_status")
-      .eq("phonepe_merchant_transaction_id", data.merchantTransactionId)
-      .maybeSingle();
-
-    if (error || !order) {
-      return { ok: false as const, error: "Order not found." };
-    }
-
-    if (order.payment_status !== "pending") {
-      return { ok: true as const, alreadyProcessed: true };
-    }
-
-    if (data.outcome === "success") {
-      const { error: updErr } = await supabaseAdmin
-        .from("orders")
-        .update({
-          payment_status: "success",
-          status: "received",
-          paid_at: new Date().toISOString(),
-          phonepe_transaction_id: `SIM_${Date.now()}`,
-        })
-        .eq("id", order.id);
-      if (updErr) return { ok: false as const, error: updErr.message };
-    } else {
-      await supabaseAdmin
-        .from("orders")
-        .update({ payment_status: "failed", status: "cancelled" })
-        .eq("id", order.id);
-    }
-
-    return { ok: true as const };
-  });
-
-// ---------------------------------------------------------------------------
-// UPI Intent flow (no payment gateway needed)
-// ---------------------------------------------------------------------------
-
-const GetUpiLinkSchema = z.object({
-  merchantTransactionId: z.string().min(1).max(100),
-});
-
-/**
- * Returns a `upi://pay?...` deep link for an order based on the restaurant's
- * stored UPI VPA + payee name. The customer's phone opens the UPI app picker;
- * money is transferred directly to the restaurant.
- */
-export const getOrderUpiLink = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => GetUpiLinkSchema.parse(input))
-  .handler(async ({ data }) => {
-    const { data: order, error } = await supabaseAdmin
-      .from("orders")
-      .select("id, total, restaurant_id, phonepe_merchant_transaction_id, payment_status")
-      .eq("phonepe_merchant_transaction_id", data.merchantTransactionId)
-      .maybeSingle();
-    if (error || !order) return { ok: false as const, error: "Order not found." };
-
-    const { data: restaurant } = await supabaseAdmin
-      .from("restaurants")
-      .select("upi_vpa, payee_name, name, payment_mode")
-      .eq("id", order.restaurant_id)
-      .maybeSingle();
-
-    if (!restaurant?.upi_vpa || !VPA_REGEX.test(restaurant.upi_vpa)) {
-      return {
-        ok: false as const,
-        error: "This restaurant has not configured UPI payouts yet.",
-      };
-    }
-
-    const uri = buildUpiUri({
-      vpa: restaurant.upi_vpa,
-      payeeName: restaurant.payee_name || restaurant.name,
-      amount: Number(order.total),
-      transactionRef: data.merchantTransactionId,
-      transactionNote: `QS-${order.id.slice(0, 6).toUpperCase()}`,
-    });
-
-    return {
-      ok: true as const,
-      upiUri: uri,
-      vpa: restaurant.upi_vpa,
-      payeeName: restaurant.payee_name || restaurant.name,
-      amount: Number(order.total),
-      paymentMode: restaurant.payment_mode,
-      paymentStatus: order.payment_status,
-    };
-  });
-
-const SubmitUtrSchema = z.object({
-  merchantTransactionId: z.string().min(1).max(100),
-  upiReferenceId: z
-    .string()
-    .trim()
-    .min(8)
-    .max(40)
-    .regex(/^[A-Za-z0-9]+$/, "UPI reference must be alphanumeric"),
-});
-
-/**
- * Customer submits the UPI reference number (UTR) shown in their UPI app
- * after paying. The order moves to `awaiting_verification` so the merchant
- * can confirm receipt.
- */
-export const submitUpiReference = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => SubmitUtrSchema.parse(input))
-  .handler(async ({ data }) => {
-    const { data: order, error } = await supabaseAdmin
-      .from("orders")
-      .select("id, payment_status, status")
-      .eq("phonepe_merchant_transaction_id", data.merchantTransactionId)
-      .maybeSingle();
-    if (error || !order) return { ok: false as const, error: "Order not found." };
-    if (order.payment_status === "success") {
-      return { ok: true as const, alreadyPaid: true };
-    }
-
-    const { error: updErr } = await supabaseAdmin
-      .from("orders")
-      .update({
-        status: "awaiting_verification",
-        upi_reference_id: data.upiReferenceId,
       })
-      .eq("id", order.id);
-    if (updErr) return { ok: false as const, error: updErr.message };
+    );
 
-    return { ok: true as const };
-  });
-
-// ---------------------------------------------------------------------------
-// PhonePe PG v2 — Sandbox
-// ---------------------------------------------------------------------------
-
-const StartPhonePeSchema = z.object({
-  orderId: z.string().uuid(),
-});
-
-/**
- * Creates a PhonePe sandbox payment session for an existing pending order
- * and returns the PhonePe-hosted checkout redirect URL.
- */
-export const startPhonePePayment = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => StartPhonePeSchema.parse(input))
-  .handler(async ({ data }) => {
-    const { data: order, error } = await supabaseAdmin
-      .from("orders")
-      .select(
-        "id, total, payment_status, phonepe_merchant_transaction_id, phonepe_order_id"
-      )
-      .eq("id", data.orderId)
-      .maybeSingle();
-    if (error || !order) return { ok: false as const, error: "Order not found." };
-    if (order.payment_status === "success") {
-      return { ok: true as const, redirectUrl: null, alreadyPaid: true as const };
-    }
-    if (!order.phonepe_merchant_transaction_id) {
-      return { ok: false as const, error: "Order has no merchantTransactionId." };
-    }
-
-    // Build absolute redirect URL back to /pay/$txn so the user lands on our status page.
+    // Build absolute redirect URL.
     const req = getRequest();
     const origin = req
       ? `${req.headers.get("x-forwarded-proto") ?? "https"}://${
           req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "localhost"
         }`
       : "";
-    const redirectUrl = `${origin}/pay/${order.phonepe_merchant_transaction_id}`;
+    const redirectUrl = `${origin}/pay/${merchantTransactionId}`;
 
     try {
       const res = await phonepeCreatePayment({
-        merchantOrderId: order.phonepe_merchant_transaction_id,
-        amountPaise: Math.round(Number(order.total) * 100),
+        merchantOrderId: merchantTransactionId,
+        amountPaise: Math.round(total * 100),
         redirectUrl,
         message: `QuickServe order ${order.id.slice(0, 6).toUpperCase()}`,
       });
-
       await supabaseAdmin
         .from("orders")
         .update({ phonepe_order_id: res.orderId })
         .eq("id", order.id);
-
-      return { ok: true as const, redirectUrl: res.redirectUrl, alreadyPaid: false as const };
+      return {
+        ok: true as const,
+        orderId: order.id,
+        merchantTransactionId,
+        redirectUrl: res.redirectUrl,
+      };
     } catch (err) {
       console.error("PhonePe create-payment error:", err);
       return {
@@ -340,45 +170,62 @@ const RefreshStatusSchema = z.object({
 });
 
 /**
- * Polls PhonePe for order status and updates our `orders` row accordingly.
- * Safe to call repeatedly from the /pay/$txn page.
+ * Polls PhonePe for status. On COMPLETED, generates the unique 4-digit pickup
+ * code via the DB function and marks the order paid.
  */
 export const refreshPhonePeStatus = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => RefreshStatusSchema.parse(input))
   .handler(async ({ data }) => {
     const { data: order } = await supabaseAdmin
       .from("orders")
-      .select("id, payment_status, status, phonepe_merchant_transaction_id")
+      .select("id, payment_status, status, restaurant_id, pickup_code")
       .eq("phonepe_merchant_transaction_id", data.merchantTransactionId)
       .maybeSingle();
     if (!order) return { ok: false as const, error: "Order not found." };
     if (order.payment_status === "success") {
-      return { ok: true as const, state: "COMPLETED" as const };
+      return {
+        ok: true as const,
+        state: "COMPLETED" as const,
+        orderId: order.id,
+        pickupCode: order.pickup_code,
+      };
     }
     try {
       const status = await phonepeOrderStatus(data.merchantTransactionId);
       const tx = status.paymentDetails?.[0];
       if (status.state === "COMPLETED") {
+        // Generate unique 4-digit code
+        const { data: codeRes, error: codeErr } = await supabaseAdmin.rpc(
+          "generate_unique_pickup_code",
+          { _restaurant_id: order.restaurant_id }
+        );
+        const pickupCode = codeErr || !codeRes ? "----" : (codeRes as string);
         await supabaseAdmin
           .from("orders")
           .update({
             payment_status: "success",
             status: "received",
             paid_at: new Date().toISOString(),
+            pickup_code: pickupCode,
             phonepe_transaction_id: tx?.transactionId ?? status.orderId,
             phonepe_order_id: status.orderId,
           })
           .eq("id", order.id);
-        return { ok: true as const, state: "COMPLETED" as const };
+        return {
+          ok: true as const,
+          state: "COMPLETED" as const,
+          orderId: order.id,
+          pickupCode,
+        };
       }
       if (status.state === "FAILED") {
         await supabaseAdmin
           .from("orders")
           .update({ payment_status: "failed", status: "cancelled" })
           .eq("id", order.id);
-        return { ok: true as const, state: "FAILED" as const };
+        return { ok: true as const, state: "FAILED" as const, orderId: order.id };
       }
-      return { ok: true as const, state: "PENDING" as const };
+      return { ok: true as const, state: "PENDING" as const, orderId: order.id };
     } catch (err) {
       console.error("PhonePe status error:", err);
       return {
@@ -387,4 +234,3 @@ export const refreshPhonePeStatus = createServerFn({ method: "POST" })
       };
     }
   });
-

@@ -1,8 +1,9 @@
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, UtensilsCrossed, Receipt, ChefHat, LogOut, Smartphone } from "lucide-react";
+import { LayoutDashboard, UtensilsCrossed, Receipt, ChefHat, LogOut, Home } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 import type { Database } from "@/integrations/supabase/types";
 
 type Restaurant = Database["public"]["Tables"]["restaurants"]["Row"];
@@ -16,7 +17,6 @@ const NAV: ReadonlyArray<{ to: string; label: string; icon: typeof LayoutDashboa
   { to: "/merchant", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/merchant/menu", label: "Menu", icon: UtensilsCrossed },
   { to: "/merchant/orders", label: "Orders", icon: Receipt },
-  { to: "/merchant/payments", label: "Payments", icon: Smartphone },
 ];
 
 function MerchantLayout() {
@@ -32,7 +32,8 @@ function MerchantLayout() {
       return;
     }
     if (!isMerchant) {
-      navigate({ to: "/become-merchant" });
+      // Non-merchants get bounced home.
+      navigate({ to: "/" });
       return;
     }
     void supabase
@@ -73,7 +74,7 @@ function MerchantLayout() {
               return (
                 <Link
                   key={n.to}
-                  to={n.to as any}
+                  to={n.to as string}
                   className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                     active
                       ? "bg-sidebar-primary text-sidebar-primary-foreground"
@@ -87,7 +88,17 @@ function MerchantLayout() {
             })}
           </nav>
 
-          <div className="border-t border-sidebar-border p-3">
+          <div className="space-y-1 border-t border-sidebar-border p-3">
+            <Button
+              asChild
+              variant="ghost"
+              className="w-full justify-start gap-2 rounded-lg px-3 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent"
+            >
+              <Link to="/">
+                <Home className="h-4 w-4" />
+                Back to home
+              </Link>
+            </Button>
             <button
               onClick={async () => {
                 await signOut();
@@ -104,12 +115,18 @@ function MerchantLayout() {
         <main className="flex-1 overflow-x-hidden">
           {/* Mobile top nav */}
           <div className="flex items-center gap-2 overflow-x-auto border-b border-border bg-card px-4 py-3 md:hidden">
+            <Link
+              to="/"
+              className="whitespace-nowrap rounded-full bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground"
+            >
+              ← Home
+            </Link>
             {NAV.map((n) => {
               const active = n.exact ? location.pathname === n.to : location.pathname.startsWith(n.to);
               return (
                 <Link
                   key={n.to}
-                  to={n.to as any}
+                  to={n.to as string}
                   className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold ${
                     active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
                   }`}
