@@ -110,7 +110,7 @@ function MerchantMenu() {
             account.
           </p>
           <Button asChild className="mt-4 rounded-full">
-            <Link to="/become-merchant">Create restaurant</Link>
+            <Link to="/">Back to home</Link>
           </Button>
         </div>
       </div>
